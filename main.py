@@ -8,7 +8,7 @@ import os.path
 from app.config import getConfig
 
 config = getConfig()
-print(config)
+
 
 # Загрузка модели машинного обучения
 #model = joblib.load('model.pkl')
@@ -60,18 +60,32 @@ def main():
 
     with tab1:
         st.header('Ввод данных для обработки')
-        # Поле для ввода данных пользователем
-        user_input = st.text_area('Введите данные здесь:')
-        
+
+        # Создаем ряды и колонки для полей ввода
+        col1, col2 = st.columns(2)
+        with col1:
+            field1 = st.text_input('Описание данных 1:')
+            field3 = st.text_input('Описание данных 3:')
+            field5 = st.text_input('Описание данных 5:')
+            field7 = st.text_input('Описание данных 7:')
+            field9 = st.text_input('Описание данных 9:')
+        with col2:
+            field2 = st.text_input('Описание данных 2:')
+            field4 = st.text_input('Описание данных 4:')
+            field6 = st.text_input('Описание данных 6:')
+            field8 = st.text_input('Описание данных 8:')
+            field10 = st.text_input('Описание данных 10:')
+
         # Кнопка для обработки ввода
         if st.button('Обработать'):
-            #prediction = model.predict(user_input)
-            # Предположим, что модель возвращает текст "работает"
-            prediction = user_input
+            # Обработка введенных данных
+            user_input = [field1, field2, field3, field4, field5, field6, field7, field8, field9, field10]
+            # Здесь код для обработки данных
+            prediction = " ".join(user_input)
             # Вывод результата и запись в базу данных
             st.write('Результат предсказания:', prediction)
             create_table()
-            add_data(user_input, prediction)
+            add_data(", ".join(user_input), prediction)
 
     with tab2:
         st.header('Просмотр данных')
