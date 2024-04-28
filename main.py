@@ -12,23 +12,39 @@ import pickle
 
 config = getConfig()
 
-
 # Загрузка модели машинного обучения
-#model = joblib.load('model.pkl')
+# model = joblib.load('model.pkl')
 
 # Установка соединения с базой данных SQLite
 conn = sqlite3.connect('data.db', check_same_thread=False)  # Добавлен check_same_thread=False для Streamlit
 c = conn.cursor()
 
+
 # Изменение структуры таблицы, добавляем столбец для времени
 def create_table():
-    c.execute('CREATE TABLE IF NOT EXISTS results(input_data TEXT, prediction TEXT, datestamp TEXT)')
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS results(
+        hospital_number REAL, lesion_1 REAL, packed_cell_volume REAL, total_protein REAL, pulse REAL, rectal_temp REAL, respiratory_rate REAL, abdomo_protein REAL, nasogastric_reflux_ph REAL, pain REAL, nasogastric_reflux REAL, rectal_exam_feces REAL, abdominal_distention REAL, abdomo_appearance REAL, abdomen REAL, nasogastric_tube REAL, temp_of_extremities REAL, peristalsis REAL, cp_data REAL, capillary_refill_time REAL, surgery REAL, peripheral_pulse REAL, mucous_membrane_bright_red REAL, surgical_lesion REAL, mucous_membrane_pale_pink REAL, mucous_membrane_normal_pink REAL, mucous_membrane_pale_cyanotic REAL, age REAL, is_generated REAL, mucous_membrane_bright_pink REAL,
+        prediction TEXT, datestamp TEXT
+    )
+    ''')
 
-# Изменение функции добавления данных, чтобы сохранять дату и время
-def add_data(input_data, prediction):
-    datestamp = str(datetime.now())  # Форматируем текущее время и дату в строку
-    c.execute('INSERT INTO results(input_data, prediction, datestamp) VALUES (?, ?, ?)', (input_data, prediction, datestamp))
+
+# Modification of the function to add data for saving the date and time
+def add_data(hospital_number, lesion_1, packed_cell_volume, total_protein, pulse, rectal_temp, respiratory_rate, abdomo_protein, nasogastric_reflux_ph, pain, nasogastric_reflux, rectal_exam_feces, abdominal_distention, abdomo_appearance, abdomen, nasogastric_tube, temp_of_extremities, peristalsis, cp_data, capillary_refill_time, surgery, peripheral_pulse, mucous_membrane_bright_red, surgical_lesion, mucous_membrane_pale_pink, mucous_membrane_normal_pink, mucous_membrane_pale_cyanotic, age, is_generated, mucous_membrane_bright_pink,
+             prediction):
+    datestamp = str(datetime.now())  # Formatting current time and date into a string
+    c.execute('''
+    INSERT INTO results(
+        hospital_number, lesion_1, packed_cell_volume, total_protein, pulse, rectal_temp, respiratory_rate, abdomo_protein, nasogastric_reflux_ph, pain, nasogastric_reflux, rectal_exam_feces, abdominal_distention, abdomo_appearance, abdomen, nasogastric_tube, temp_of_extremities, peristalsis, cp_data, capillary_refill_time, surgery, peripheral_pulse, mucous_membrane_bright_red, surgical_lesion, mucous_membrane_pale_pink, mucous_membrane_normal_pink, mucous_membrane_pale_cyanotic, age, is_generated, mucous_membrane_bright_pink,
+        prediction, datestamp
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        hospital_number, lesion_1, packed_cell_volume, total_protein, pulse, rectal_temp, respiratory_rate, abdomo_protein, nasogastric_reflux_ph, pain, nasogastric_reflux, rectal_exam_feces, abdominal_distention, abdomo_appearance, abdomen, nasogastric_tube, temp_of_extremities, peristalsis, cp_data, capillary_refill_time, surgery, peripheral_pulse, mucous_membrane_bright_red, surgical_lesion, mucous_membrane_pale_pink, mucous_membrane_normal_pink, mucous_membrane_pale_cyanotic, age, is_generated, mucous_membrane_bright_pink,
+        prediction, datestamp
+    ))
     conn.commit()
+
 
 # Получение данных из базы данных
 def view_data(start_date=None, end_date=None, selected_prediction=None):
@@ -46,14 +62,16 @@ def view_data(start_date=None, end_date=None, selected_prediction=None):
         else:
             query += ' WHERE prediction = ?'
             params = (selected_prediction,)
-    
+
     c.execute(query, params)
     data = c.fetchall()
     return data
 
+
 def create_pie_chart(data, column='Предсказание'):
     fig = px.pie(data, names=column, title='Распределение предсказаний')
     st.plotly_chart(fig, use_container_width=True)
+
 
 def main():
     st.title('Прогнозированипе состояния здоровья лошади')
@@ -94,8 +112,7 @@ def main():
             26: "Частота пульса (удары в минуту):",
             27: "Частота пульса (удары в минуту):",
             28: "Общий уровень белка (г/дл):",
-            29: "Анамнез или другие заметки:",
-            30: "Рефлекс перистальтики (баллы):"
+            29: "Рефлекс перистальтики (баллы):"
         }
 
         user_input_list = []
@@ -103,14 +120,11 @@ def main():
 
         # Создаем форму для ввода данных
         with st.form("input_form"):
-            for i in range(1, 31):
+            for i in range(1, 30):
                 description = parameters_description.get(i, f"Параметр {i}:")
                 if i in [3, 4, 5, 6, 7, 8, 9, 28]:
                     # Для параметров, представляющих числа с плавающей точкой
                     param = st.text_input(description, key=f'param{i}')
-                elif i == 29:
-                    # Для текстовых параметров
-                    param = st.text_area(description, key=f'param{i}')
                 else:
                     # Для параметров, представляющих целые числа
                     param = st.text_input(description, key=f'param{i}')
@@ -119,22 +133,26 @@ def main():
 
         # Кнопка для обработки ввода
         if submit_button:
-            for i in range(1, 31):
+            for i in range(1, 30):
                 user_input_list.append(st.session_state[f'param{i}'])
+            print(user_input_list)
             old_value = user_input_list[28]
             # Заменяем 29-е значение на 'единица'
-            user_input_list[28] = 1
+            user_input_list[28] = '1'
             # Добавляем старое значение в конец списка
             user_input_list.append(old_value)
             # Обработка введенных данных
             # Здесь код для обработки данных
             with open("hist_model.pkl", 'rb') as file:
                 loaded_model = pickle.load(file)
-            prediction = loaded_model.predict([user_input_list[:-1]])
+            prediction = loaded_model.predict([user_input_list])
+
+            outcome_mapping = {0: 'died', 1: 'euthanized', 2: 'lived'}
             # Вывод результата и запись в базу данных
+            prediction = outcome_mapping[prediction[0]]
             st.write('Результат предсказания:', prediction)
             create_table()
-            add_data(", ".join(user_input_list), prediction)
+            add_data(*user_input_list, prediction)
 
     with tab2:
         st.header('Просмотр данных')
@@ -157,7 +175,17 @@ def main():
                 # Получение отфильтрованных данных
                 data = view_data(start_date, end_date, selected_prediction)
                 # Вывод данных
-                data_df = pd.DataFrame(data, columns=['Введенные данные', 'Предсказание', 'Дата'])
+                data_df = pd.DataFrame(data, columns=['hospital_number', 'lesion_1', 'packed_cell_volume',
+                    'total_protein', 'pulse', 'rectal_temp',
+                    'respiratory_rate', 'abdomo_protein', 'nasogastric_reflux_ph',
+                    'pain', 'nasogastric_reflux', 'rectal_exam_feces',
+                    'abdominal_distention', 'abdomo_appearance', 'abdomen',
+                    'nasogastric_tube', 'temp_of_extremities', 'peristalsis',
+                    'cp_data', 'capillary_refill_time', 'surgery',
+                    'peripheral_pulse', 'mucous_membrane_bright_red', 'surgical_lesion',
+                    'mucous_membrane_pale_pink', 'mucous_membrane_normal_pink',
+                    'mucous_membrane_pale_cyanotic', 'age', 'is_generated',
+                    'mucous_membrane_bright_pink', 'Предсказание', 'Дата'])
                 st.dataframe(data_df)
         else:
             if st.button('Проверить пароль'):
@@ -172,7 +200,7 @@ def main():
             c.execute('SELECT prediction FROM results')
             all_predictions = c.fetchall()
             predictions_df = pd.DataFrame(all_predictions, columns=['Предсказание'])
-            
+
             # Создаем и отображаем круговую диаграмму
             create_pie_chart(predictions_df)
         else:
