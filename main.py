@@ -6,6 +6,9 @@ from datetime import datetime, date
 import plotly.express as px
 import os.path
 from app.config import getConfig
+from sklearn.experimental import enable_hist_gradient_boosting  # noqa
+from sklearn.ensemble import HistGradientBoostingClassifier
+import pickle
 
 config = getConfig()
 
@@ -59,33 +62,79 @@ def main():
     tab1, tab2, tab3 = st.tabs(['Ввод данных', 'Просмотр БД', 'График'])
 
     with tab1:
-        st.header('Ввод данных для обработки')
+        st.header('Введите данные для анализа')
 
-        # Создаем ряды и колонки для полей ввода
-        col1, col2 = st.columns(2)
-        with col1:
-            field1 = st.text_input('Описание данных 1:')
-            field3 = st.text_input('Описание данных 3:')
-            field5 = st.text_input('Описание данных 5:')
-            field7 = st.text_input('Описание данных 7:')
-            field9 = st.text_input('Описание данных 9:')
-        with col2:
-            field2 = st.text_input('Описание данных 2:')
-            field4 = st.text_input('Описание данных 4:')
-            field6 = st.text_input('Описание данных 6:')
-            field8 = st.text_input('Описание данных 8:')
-            field10 = st.text_input('Описание данных 10:')
+        # Описание параметров для ввода
+        parameters_description = {
+            1: "Возраст лошади (лет):",
+            2: "Температура тела (градусы Цельсия):",
+            3: "Частота пульса (удары в минуту):",
+            4: "Частота пульса (удары в минуту):",
+            5: "Частота пульса (удары в минуту):",
+            6: "Частота пульса (удары в минуту):",
+            7: "Частота пульса (удары в минуту):",
+            8: "Частота пульса (удары в минуту):",
+            9: "Частота пульса (удары в минуту):",
+            10: "Частота пульса (удары в минуту):",
+            11: "Частота пульса (удары в минуту):",
+            12: "Частота пульса (удары в минуту):",
+            13: "Частота пульса (удары в минуту):",
+            14: "Частота пульса (удары в минуту):",
+            15: "Частота пульса (удары в минуту):",
+            16: "Частота пульса (удары в минуту):",
+            17: "Частота пульса (удары в минуту):",
+            18: "Частота пульса (удары в минуту):",
+            19: "Частота пульса (удары в минуту):",
+            20: "Частота пульса (удары в минуту):",
+            21: "Частота пульса (удары в минуту):",
+            22: "Частота пульса (удары в минуту):",
+            23: "Частота пульса (удары в минуту):",
+            24: "Частота пульса (удары в минуту):",
+            25: "Частота пульса (удары в минуту):",
+            26: "Частота пульса (удары в минуту):",
+            27: "Частота пульса (удары в минуту):",
+            28: "Общий уровень белка (г/дл):",
+            29: "Анамнез или другие заметки:",
+            30: "Рефлекс перистальтики (баллы):"
+        }
+
+        user_input_list = []
+        valid_data = True
+
+        # Создаем форму для ввода данных
+        with st.form("input_form"):
+            for i in range(1, 31):
+                description = parameters_description.get(i, f"Параметр {i}:")
+                if i in [3, 4, 5, 6, 7, 8, 9, 28]:
+                    # Для параметров, представляющих числа с плавающей точкой
+                    param = st.text_input(description, key=f'param{i}')
+                elif i == 29:
+                    # Для текстовых параметров
+                    param = st.text_area(description, key=f'param{i}')
+                else:
+                    # Для параметров, представляющих целые числа
+                    param = st.text_input(description, key=f'param{i}')
+
+            submit_button = st.form_submit_button(label='Обработать')
 
         # Кнопка для обработки ввода
-        if st.button('Обработать'):
+        if submit_button:
+            for i in range(1, 31):
+                user_input_list.append(st.session_state[f'param{i}'])
+            old_value = user_input_list[28]
+            # Заменяем 29-е значение на 'единица'
+            user_input_list[28] = 1
+            # Добавляем старое значение в конец списка
+            user_input_list.append(old_value)
             # Обработка введенных данных
-            user_input = [field1, field2, field3, field4, field5, field6, field7, field8, field9, field10]
             # Здесь код для обработки данных
-            prediction = " ".join(user_input)
+            with open("hist_model.pkl", 'rb') as file:
+                loaded_model = pickle.load(file)
+            prediction = loaded_model.predict([user_input_list[:-1]])
             # Вывод результата и запись в базу данных
             st.write('Результат предсказания:', prediction)
             create_table()
-            add_data(", ".join(user_input), prediction)
+            add_data(", ".join(user_input_list), prediction)
 
     with tab2:
         st.header('Просмотр данных')
