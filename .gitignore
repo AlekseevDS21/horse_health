@@ -1,0 +1,4 @@
+data.db
+.venv
+docker-compose.yml
+hist_model.pkl
