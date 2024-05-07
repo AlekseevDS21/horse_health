@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
+from clickhouse_driver import Client
 import joblib
 from datetime import datetime, date
 import plotly.express as px
@@ -12,74 +12,92 @@ import pickle
 
 config = getConfig()
 
-# Загрузка модели машинного обучения
-# model = joblib.load('model.pkl')
 
-# Установка соединения с базой данных SQLite
-conn = sqlite3.connect('data.db', check_same_thread=False)  # Добавлен check_same_thread=False для Streamlit
-c = conn.cursor()
+
+
+client = Client(host='localhost', database='health', user='default', password='Andrey41k!')
+def execute_clickhouse_query(query, params=None):
+    return client.execute(query, params, types_check=True) if params else client.execute(query, types_check=True)
+
+
 def create_users_table():
-    c.execute('CREATE TABLE IF NOT EXISTS userstable(username TEXT, password TEXT)')
-    conn.commit()
+    execute_clickhouse_query('CREATE TABLE IF NOT EXISTS userstable(username String, password String) ENGINE = MergeTree() ORDER BY username')
 
 def add_userdata(username, password):
-    c.execute('INSERT INTO userstable(username, password) VALUES (?, ?)', (username, password))
-    conn.commit()
+    execute_clickhouse_query('INSERT INTO userstable(username, password) VALUES', [(username, password)])
 
 def login_user(username, password):
-    c.execute('SELECT * FROM userstable WHERE username =? AND password = ?', (username, password))
-    data = c.fetchall()
+    data = execute_clickhouse_query('SELECT * FROM userstable WHERE username = %(username)s AND password = %(password)s', {'username': username, 'password': password})
     return data
+
 
 def logout_user():
     st.session_state['authenticated'] = False
     st.experimental_rerun()
 
-# Изменение структуры таблицы, добавляем столбец для времени
+
 def create_table():
-    c.execute('''
+    execute_clickhouse_query('''
     CREATE TABLE IF NOT EXISTS results(
-        hospital_number REAL, lesion_1 REAL, packed_cell_volume REAL, total_protein REAL, pulse REAL, rectal_temp REAL, respiratory_rate REAL, abdomo_protein REAL, nasogastric_reflux_ph REAL, pain REAL, nasogastric_reflux REAL, rectal_exam_feces REAL, abdominal_distention REAL, abdomo_appearance REAL, abdomen REAL, nasogastric_tube REAL, temp_of_extremities REAL, peristalsis REAL, cp_data REAL, capillary_refill_time REAL, surgery REAL, peripheral_pulse REAL, mucous_membrane_bright_red REAL, surgical_lesion REAL, mucous_membrane_pale_pink REAL, mucous_membrane_normal_pink REAL, mucous_membrane_pale_cyanotic REAL, age REAL, is_generated REAL, mucous_membrane_bright_pink REAL,
-        prediction TEXT, datestamp TEXT
-    )
+    hospital_number Int32,
+    lesion_1 Int32,
+    packed_cell_volume Float32,
+    total_protein Float32,
+    pulse Float32,
+    rectal_temp Float32,
+    respiratory_rate Float32,
+    abdomo_protein Float32,
+    nasogastric_reflux_ph Float32,
+    pain Int32,
+    nasogastric_reflux Int32,
+    rectal_exam_feces Int32,
+    abdominal_distention Int32,
+    abdomo_appearance Int32,
+    abdomen Int32,
+    nasogastric_tube Int32,
+    temp_of_extremities Int32,
+    peristalsis Int32,
+    cp_data Int32,
+    capillary_refill_time Int32,
+    surgery Int32,
+    peripheral_pulse Int32,
+    mucous_membrane_bright_red Int32,
+    surgical_lesion Int32,
+    mucous_membrane_pale_pink Int32,
+    mucous_membrane_normal_pink Int32,
+    mucous_membrane_pale_cyanotic Int32,
+    age Int32,
+    is_generated Int32,
+    mucous_membrane_bright_pink Int32,
+    prediction String,
+    datestamp DateTime)
+    ENGINE = MergeTree() ORDER BY (hospital_number, datestamp)
     ''')
 
 
-# Modification of the function to add data for saving the date and time
-def add_data(hospital_number, lesion_1, packed_cell_volume, total_protein, pulse, rectal_temp, respiratory_rate, abdomo_protein, nasogastric_reflux_ph, pain, nasogastric_reflux, rectal_exam_feces, abdominal_distention, abdomo_appearance, abdomen, nasogastric_tube, temp_of_extremities, peristalsis, cp_data, capillary_refill_time, surgery, peripheral_pulse, mucous_membrane_bright_red, surgical_lesion, mucous_membrane_pale_pink, mucous_membrane_normal_pink, mucous_membrane_pale_cyanotic, age, is_generated, mucous_membrane_bright_pink,
-             prediction):
-    datestamp = str(datetime.now())  # Formatting current time and date into a string
-    c.execute('''
-    INSERT INTO results(
-        hospital_number, lesion_1, packed_cell_volume, total_protein, pulse, rectal_temp, respiratory_rate, abdomo_protein, nasogastric_reflux_ph, pain, nasogastric_reflux, rectal_exam_feces, abdominal_distention, abdomo_appearance, abdomen, nasogastric_tube, temp_of_extremities, peristalsis, cp_data, capillary_refill_time, surgery, peripheral_pulse, mucous_membrane_bright_red, surgical_lesion, mucous_membrane_pale_pink, mucous_membrane_normal_pink, mucous_membrane_pale_cyanotic, age, is_generated, mucous_membrane_bright_pink,
-        prediction, datestamp
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        hospital_number, lesion_1, packed_cell_volume, total_protein, pulse, rectal_temp, respiratory_rate, abdomo_protein, nasogastric_reflux_ph, pain, nasogastric_reflux, rectal_exam_feces, abdominal_distention, abdomo_appearance, abdomen, nasogastric_tube, temp_of_extremities, peristalsis, cp_data, capillary_refill_time, surgery, peripheral_pulse, mucous_membrane_bright_red, surgical_lesion, mucous_membrane_pale_pink, mucous_membrane_normal_pink, mucous_membrane_pale_cyanotic, age, is_generated, mucous_membrane_bright_pink,
-        prediction, datestamp
-    ))
-    conn.commit()
+def add_data(*args):
+    datestamp = datetime.now()
+    datestamp_str = datestamp.strftime('%Y-%m-%d %H:%M:%S')
+    execute_clickhouse_query('INSERT INTO results VALUES', [(args + (datestamp_str,))])
 
 
-# Получение данных из базы данных
 def view_data(start_date=None, end_date=None, selected_prediction=None):
     query = 'SELECT * FROM results'
     if selected_prediction == 'Все':
         if start_date and end_date:
-            query += ' WHERE date(datestamp) BETWEEN ? AND ?'
-            params = (start_date, end_date)
+            query += ' WHERE toDate(datestamp) BETWEEN %(start_date)s AND %(end_date)s'
+            params = {'start_date': start_date, 'end_date': end_date}
         else:
-            params = ()
+            params = {}
     else:
         if start_date and end_date:
-            query += ' WHERE prediction = ? AND date(datestamp) BETWEEN ? AND ?'
-            params = (selected_prediction, start_date, end_date)
+            query += ' WHERE prediction = %(prediction)s AND toDate(datestamp) BETWEEN %(start_date)s AND %(end_date)s'
+            params = {'prediction': selected_prediction, 'start_date': start_date, 'end_date': end_date}
         else:
-            query += ' WHERE prediction = ?'
-            params = (selected_prediction,)
+            query += ' WHERE prediction = %(prediction)s'
+            params = {'prediction': selected_prediction}
 
-    c.execute(query, params)
-    data = c.fetchall()
+    data = execute_clickhouse_query(query, params)
     return data
 
 
@@ -100,7 +118,6 @@ def main():
             if st.button('Выйти из аккаунта'):
                 logout_user()
 
-        # Вкладки
         tab1, tab2, tab3 = st.tabs(['Ввод данных', 'Просмотр БД', 'График'])
 
         with tab1:
@@ -146,7 +163,7 @@ def main():
             with st.form("input_form"):
                 for i in range(1, 30):
                     description = parameters_description.get(i, f"Параметр {i}:")
-                    if i in [3, 4, 5, 6, 7, 8, 9, 28]:
+                    if i in [3, 4, 5, 6, 7, 8, 9]:
                         # Для параметров, представляющих числа с плавающей точкой
                         param = st.text_input(description, key=f'param{i}')
                     else:
@@ -158,11 +175,14 @@ def main():
             # Кнопка для обработки ввода
             if submit_button:
                 for i in range(1, 30):
-                    user_input_list.append(st.session_state[f'param{i}'])
+                    if 3 <= i <= 9:
+                        user_input_list.append(float(st.session_state[f'param{i}']))
+                    else:
+                        user_input_list.append(int(st.session_state[f'param{i}']))
                 print(user_input_list)
                 old_value = user_input_list[28]
                 # Заменяем 29-е значение на 'единица'
-                user_input_list[28] = '1'
+                user_input_list[28] = 1
                 # Добавляем старое значение в конец списка
                 user_input_list.append(old_value)
                 # Обработка введенных данных
@@ -184,48 +204,43 @@ def main():
             correct_password = config['password']
 
             if password == correct_password:
-                # Фильтр по предсказанию
-                c.execute('SELECT DISTINCT prediction FROM results')
-                unique_predictions = c.fetchall()
+
+                unique_predictions = client.execute('SELECT distinct prediction FROM results')
                 prediction_options = [pred[0] for pred in unique_predictions]
 
                 selected_prediction = st.selectbox('Фильтр по полю predict:', ['Все'] + prediction_options)
-                # Фильтр по дате
                 st.subheader('Фильтр по дате')
                 start_date = st.date_input('С:', date.today())
                 end_date = st.date_input('По:', date.today())
 
                 if st.button('Показать данные'):
-                    # Получение отфильтрованных данных
                     data = view_data(start_date, end_date, selected_prediction)
-                    # Вывод данных
                     data_df = pd.DataFrame(data, columns=['hospital_number', 'lesion_1', 'packed_cell_volume',
-                        'total_protein', 'pulse', 'rectal_temp',
-                        'respiratory_rate', 'abdomo_protein', 'nasogastric_reflux_ph',
-                        'pain', 'nasogastric_reflux', 'rectal_exam_feces',
-                        'abdominal_distention', 'abdomo_appearance', 'abdomen',
-                        'nasogastric_tube', 'temp_of_extremities', 'peristalsis',
-                        'cp_data', 'capillary_refill_time', 'surgery',
-                        'peripheral_pulse', 'mucous_membrane_bright_red', 'surgical_lesion',
-                        'mucous_membrane_pale_pink', 'mucous_membrane_normal_pink',
-                        'mucous_membrane_pale_cyanotic', 'age', 'is_generated',
-                        'mucous_membrane_bright_pink', 'Предсказание', 'Дата'])
+                                                          'total_protein', 'pulse', 'rectal_temp',
+                                                          'respiratory_rate', 'abdomo_protein', 'nasogastric_reflux_ph',
+                                                          'pain', 'nasogastric_reflux', 'rectal_exam_feces',
+                                                          'abdominal_distention', 'abdomo_appearance', 'abdomen',
+                                                          'nasogastric_tube', 'temp_of_extremities', 'peristalsis',
+                                                          'cp_data', 'capillary_refill_time', 'surgery',
+                                                          'peripheral_pulse', 'mucous_membrane_bright_red',
+                                                          'surgical_lesion',
+                                                          'mucous_membrane_pale_pink', 'mucous_membrane_normal_pink',
+                                                          'mucous_membrane_pale_cyanotic', 'age', 'is_generated',
+                                                          'mucous_membrane_bright_pink', 'Предсказание', 'Дата'])
                     st.dataframe(data_df)
             else:
                 if st.button('Проверить пароль'):
                     st.error('Неправильный пароль!')
+
         with tab3:
             st.header('Статистика предсказаний')
             password = st.text_input('Введите пароль для доступа к статистике:', type='password', key='password_tab3')
             correct_password = config['password']  # Замените 'секрет' на ваш реальный пароль
 
             if password == correct_password:
-                # Получаем данные для диаграммы
-                c.execute('SELECT prediction FROM results')
-                all_predictions = c.fetchall()
+                all_predictions = execute_clickhouse_query('SELECT prediction FROM results')
                 predictions_df = pd.DataFrame(all_predictions, columns=['Предсказание'])
 
-                # Создаем и отображаем круговую диаграмму
                 create_pie_chart(predictions_df)
             else:
                 if st.button('Проверить пароль', key='check_password_tab3'):
@@ -244,7 +259,6 @@ def main():
                 confirm_password = st.text_input("Повторите пароль", type='password', key="confirm_password")
 
                 if new_password and confirm_password and st.button("Зарегистрироваться", key="signup_button"):
-                    # Проверяем, совпадают ли пароли
                     if new_password == confirm_password:
                         add_userdata(new_username, new_password)
                         st.success("Вы успешно зарегистрировались!")
