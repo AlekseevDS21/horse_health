@@ -12,20 +12,22 @@ import pickle
 
 config = getConfig()
 
-
-
-
 client = Client(host='localhost', database='health', user='default', password='Andrey41k!')
 def execute_clickhouse_query(query, params=None):
     return client.execute(query, params, types_check=True) if params else client.execute(query, types_check=True)
 
+def is_username_taken(username):
+    data = execute_clickhouse_query("SELECT COUNT(*) FROM userstable WHERE username = %(username)s", {'username': username})
+    return data[0][0] > 0
 
 def create_users_table():
     execute_clickhouse_query('CREATE TABLE IF NOT EXISTS userstable(username String, password String) ENGINE = MergeTree() ORDER BY username')
 
 def add_userdata(username, password):
+    if is_username_taken(username):
+        return False  # Имя пользователя уже занято
     execute_clickhouse_query('INSERT INTO userstable(username, password) VALUES', [(username, password)])
-
+    return True
 def login_user(username, password):
     data = execute_clickhouse_query('SELECT * FROM userstable WHERE username = %(username)s AND password = %(password)s', {'username': username, 'password': password})
     return data
@@ -255,15 +257,21 @@ def main():
 
             if choice == "Регистрация":
                 new_username = st.text_input("Имя пользователя", key="new_username")
-                new_password = st.text_input("Пароль", type='password', key="new_password")
-                confirm_password = st.text_input("Повторите пароль", type='password', key="confirm_password")
-
-                if new_password and confirm_password and st.button("Зарегистрироваться", key="signup_button"):
-                    if new_password == confirm_password:
-                        add_userdata(new_username, new_password)
-                        st.success("Вы успешно зарегистрировались!")
+                # Проверяем, было ли что-то введено в поле имени пользователя
+                if new_username:
+                    # Проверяем, занято ли имя пользователя
+                    if is_username_taken(new_username):
+                        st.error("Имя пользователя уже занято. Пожалуйста, выберите другое имя.")
+                        # Останавливаем дальнейший ввод данных, пока не будет выбрано другое имя пользователя
                     else:
-                        st.error("Пароли не совпадают. Попробуйте снова.")
+                        new_password = st.text_input("Пароль", type='password', key="new_password")
+                        confirm_password = st.text_input("Повторите пароль", type='password', key="confirm_password")
+                        if new_password and confirm_password and st.button("Зарегистрироваться", key="signup_button"):
+                            if new_password == confirm_password:
+                                add_userdata(new_username, new_password)
+                                st.success("Вы успешно зарегистрировались!")
+                            else:
+                                st.error("Пароли не совпадают. Попробуйте снова.")
 
             elif choice == "Вход":
                 username = st.text_input("Имя пользователя", key="username_login")
