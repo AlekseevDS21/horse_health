@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from clickhouse_driver import Client
 import joblib
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import plotly.express as px
 import os.path
 from app.config import getConfig
@@ -20,6 +20,7 @@ def is_username_taken(username):
     data = execute_clickhouse_query("SELECT COUNT(*) FROM userstable WHERE username = %(username)s", {'username': username})
     return data[0][0] > 0
 
+
 def create_users_table():
     execute_clickhouse_query('CREATE TABLE IF NOT EXISTS userstable(username String, password String) ENGINE = MergeTree() ORDER BY username')
 
@@ -34,13 +35,14 @@ def login_user(username, password):
 
 
 def logout_user():
-    st.session_state['authenticated'] = False
+    st.session_state.pop('authenticated', None)  # Удаляем аутентификацию
+    st.session_state.pop('current_user', None)   # Удаляем текущего пользователя
     st.experimental_rerun()
-
 
 def create_table():
     execute_clickhouse_query('''
     CREATE TABLE IF NOT EXISTS results(
+    username String,
     hospital_number Int32,
     lesion_1 Int32,
     packed_cell_volume Float32,
@@ -73,35 +75,51 @@ def create_table():
     mucous_membrane_bright_pink Int32,
     prediction String,
     datestamp DateTime)
-    ENGINE = MergeTree() ORDER BY (hospital_number, datestamp)
+    ENGINE = MergeTree() ORDER BY (username, hospital_number, datestamp)
     ''')
 
 
-def add_data(*args):
+def add_data(username, *args):
     datestamp = datetime.now()
-    datestamp_str = datestamp.strftime('%Y-%m-%d %H:%M:%S')
-    execute_clickhouse_query('INSERT INTO results VALUES', [(args + (datestamp_str,))])
+    query = 'INSERT INTO results (username, hospital_number, lesion_1, packed_cell_volume, total_protein, pulse, rectal_temp, respiratory_rate, abdomo_protein, nasogastric_reflux_ph, pain, nasogastric_reflux, rectal_exam_feces, abdominal_distention, abdomo_appearance, abdomen, nasogastric_tube, temp_of_extremities, peristalsis, cp_data, capillary_refill_time, surgery, peripheral_pulse, mucous_membrane_bright_red, surgical_lesion, mucous_membrane_pale_pink, mucous_membrane_normal_pink, mucous_membrane_pale_cyanotic, age, is_generated, mucous_membrane_bright_pink, prediction, datestamp) VALUES'
+    params = [(username,) + tuple(args) + (datestamp,)]
+    execute_clickhouse_query(query, params)
 
-
-def view_data(start_date=None, end_date=None, selected_prediction=None):
-    query = 'SELECT * FROM results'
-    if selected_prediction == 'Все':
-        if start_date and end_date:
-            query += ' WHERE toDate(datestamp) BETWEEN %(start_date)s AND %(end_date)s'
-            params = {'start_date': start_date, 'end_date': end_date}
-        else:
-            params = {}
+def view_data(username, start_date=None, end_date=None, selected_prediction=None):
+    if username == 'admin':
+        query = 'SELECT * FROM results'
+        params = {}
     else:
-        if start_date and end_date:
-            query += ' WHERE prediction = %(prediction)s AND toDate(datestamp) BETWEEN %(start_date)s AND %(end_date)s'
-            params = {'prediction': selected_prediction, 'start_date': start_date, 'end_date': end_date}
-        else:
+        query = 'SELECT * FROM results WHERE username = %(username)s'
+        params = {'username': username}
+
+    # Для администратора добавляем расширенный фильтр
+    if username == 'admin':
+        if selected_prediction and selected_prediction != 'Все':
             query += ' WHERE prediction = %(prediction)s'
-            params = {'prediction': selected_prediction}
+            params['prediction'] = selected_prediction
+            formatted_start_date = start_date.strftime('%Y-%m-%d')
+            formatted_end_date = end_date.strftime('%Y-%m-%d')
+            query += f" AND toDate(datestamp) BETWEEN '{formatted_start_date}' AND '{formatted_end_date}'"
+        else:
+            formatted_start_date = start_date.strftime('%Y-%m-%d')
+            formatted_end_date = end_date.strftime('%Y-%m-%d')
+            query += f" WHERE toDate(datestamp) BETWEEN '{formatted_start_date}' AND '{formatted_end_date}'"
+
+    else:
+        if selected_prediction and selected_prediction != 'Все':
+            query += ' AND prediction = %(prediction)s'
+            params['prediction'] = selected_prediction
+            formatted_start_date = start_date.strftime('%Y-%m-%d')
+            formatted_end_date = end_date.strftime('%Y-%m-%d')
+            query += f" AND toDate(datestamp) BETWEEN '{formatted_start_date}' AND '{formatted_end_date}'"
+        else:
+            formatted_start_date = start_date.strftime('%Y-%m-%d')
+            formatted_end_date = end_date.strftime('%Y-%m-%d')
+            query += f" AND toDate(datestamp) BETWEEN '{formatted_start_date}' AND '{formatted_end_date}'"
 
     data = execute_clickhouse_query(query, params)
-    return data
-
+    return pd.DataFrame(data)
 
 def create_pie_chart(data, column='Предсказание'):
     fig = px.pie(data, names=column, title='Распределение предсказаний')
@@ -112,7 +130,11 @@ def main():
     create_users_table()
     if 'authenticated' not in st.session_state:
         st.session_state['authenticated'] = False
+        st.session_state['current_user'] = ''  # Инициализация текущего пользователя
+
+        # Если пользователь аутентифицирован, присваиваем имя пользователя
     if st.session_state['authenticated']:
+        current_user = st.session_state.get('current_user', '')
         logout_placeholder = st.empty()
         st.title('Прогнозирование состояния здоровья животных')
 
@@ -120,7 +142,7 @@ def main():
             if st.button('Выйти из аккаунта'):
                 logout_user()
 
-        tab1, tab2, tab3 = st.tabs(['Ввод данных', 'Просмотр БД', 'График'])
+        tab1, tab2, tab3 = st.tabs(['Ввод данных', 'Просмотр БД', 'Дашборд'])
 
         with tab1:
             st.header('Введите данные для анализа')
@@ -176,77 +198,78 @@ def main():
 
             # Кнопка для обработки ввода
             if submit_button:
-                for i in range(1, 30):
-                    if 3 <= i <= 9:
-                        user_input_list.append(float(st.session_state[f'param{i}']))
-                    else:
-                        user_input_list.append(int(st.session_state[f'param{i}']))
-                print(user_input_list)
-                old_value = user_input_list[28]
-                # Заменяем 29-е значение на 'единица'
-                user_input_list[28] = 1
-                # Добавляем старое значение в конец списка
-                user_input_list.append(old_value)
-                # Обработка введенных данных
-                # Здесь код для обработки данных
-                with open("hist_model.pkl", 'rb') as file:
-                    loaded_model = pickle.load(file)
-                prediction = loaded_model.predict([user_input_list])
+                try:
+                    for i in range(1, 30):
+                        if 3 <= i <= 9:
+                            user_input_list.append(float(st.session_state[f'param{i}']))
+                        else:
+                            user_input_list.append(int(st.session_state[f'param{i}']))
+                    print(user_input_list)
+                    old_value = user_input_list[28]
+                    # Заменяем 29-е значение на 'единица'
+                    user_input_list[28] = 1
+                    # Добавляем старое значение в конец списка
+                    user_input_list.append(old_value)
+                    # Обработка введенных данных
+                    # Здесь код для обработки данных
+                    with open("hist_model.pkl", 'rb') as file:
+                        loaded_model = pickle.load(file)
+                    prediction = loaded_model.predict([user_input_list])
 
-                outcome_mapping = {0: 'смерть', 1: 'эвтаназия', 2: 'живой'}
-                # Вывод результата и запись в базу данных
-                prediction = outcome_mapping[prediction[0]]
-                st.write('Результат предсказания:', prediction)
-                create_table()
-                add_data(*user_input_list, prediction)
+                    outcome_mapping = {0: 'смерть', 1: 'эвтаназия', 2: 'живой'}
+                    # Вывод результата и запись в базу данных
+                    username = st.session_state.get('current_user', 'unknown')  # Получаем имя текущего пользователя
+                    prediction = outcome_mapping[prediction[0]]
+                    st.write('Результат предсказания:', prediction)
+                    create_table()
+                    add_data(username, *user_input_list, prediction)
+                except:
+                    st.write('Введены не корректные данные')
+
 
         with tab2:
             st.header('Просмотр данных')
-            password = st.text_input('Введите пароль для доступа к данным:', type='password')
-            correct_password = config['password']
+            username = st.session_state.get('current_user')  # Получаем имя текущего пользователя из сессии
+            prediction_options = ["смерть", "эвтаназия", "живой"]
 
-            if password == correct_password:
+            if username:
+                # Для администратора показываем все данные, для других пользователей — только их данные
+                if username == 'admin':
+                    selected_prediction = st.selectbox('Фильтр по полю predict:', ['Все'] + prediction_options)
+                    start_date = st.date_input("Выберите начальную дату:", date.today() - timedelta(days=7))
+                    end_date = st.date_input("Выберите конечную дату:", date.today())
+                    if st.button('Показать данные'):
+                        data_df = view_data(username, start_date, end_date,
+                                            selected_prediction)  # Используем функцию view_data
+                        st.dataframe(data_df)
+                else:  # Если пользователь не admin
+                    selected_prediction = st.selectbox('Фильтр по полю predict:', ['Все'] + prediction_options)
+                    start_date = st.date_input("Выберите начальную дату:", date.today() - timedelta(days=7))
+                    end_date = st.date_input("Выберите конечную дату:", date.today())
 
-                unique_predictions = client.execute('SELECT distinct prediction FROM results')
-                prediction_options = [pred[0] for pred in unique_predictions]
-
-                selected_prediction = st.selectbox('Фильтр по полю predict:', ['Все'] + prediction_options)
-                st.subheader('Фильтр по дате')
-                start_date = st.date_input('С:', date.today())
-                end_date = st.date_input('По:', date.today())
-
-                if st.button('Показать данные'):
-                    data = view_data(start_date, end_date, selected_prediction)
-                    data_df = pd.DataFrame(data, columns=['hospital_number', 'lesion_1', 'packed_cell_volume',
-                                                          'total_protein', 'pulse', 'rectal_temp',
-                                                          'respiratory_rate', 'abdomo_protein', 'nasogastric_reflux_ph',
-                                                          'pain', 'nasogastric_reflux', 'rectal_exam_feces',
-                                                          'abdominal_distention', 'abdomo_appearance', 'abdomen',
-                                                          'nasogastric_tube', 'temp_of_extremities', 'peristalsis',
-                                                          'cp_data', 'capillary_refill_time', 'surgery',
-                                                          'peripheral_pulse', 'mucous_membrane_bright_red',
-                                                          'surgical_lesion',
-                                                          'mucous_membrane_pale_pink', 'mucous_membrane_normal_pink',
-                                                          'mucous_membrane_pale_cyanotic', 'age', 'is_generated',
-                                                          'mucous_membrane_bright_pink', 'Предсказание', 'Дата'])
-                    st.dataframe(data_df)
+                    if st.button('Показать мои данные'):
+                        # Предполагаем, что функция view_data может принимать даты для фильтрации
+                        data = view_data(username, start_date, end_date)
+                        st.dataframe(data)
             else:
-                if st.button('Проверить пароль'):
-                    st.error('Неправильный пароль!')
+                st.error("Вы не авторизованы!")
 
         with tab3:
-            st.header('Статистика предсказаний')
-            password = st.text_input('Введите пароль для доступа к статистике:', type='password', key='password_tab3')
-            correct_password = config['password']  # Замените 'секрет' на ваш реальный пароль
-
-            if password == correct_password:
-                all_predictions = execute_clickhouse_query('SELECT prediction FROM results')
-                predictions_df = pd.DataFrame(all_predictions, columns=['Предсказание'])
-
-                create_pie_chart(predictions_df)
-            else:
-                if st.button('Проверить пароль', key='check_password_tab3'):
-                    st.error('Неправильный пароль!')
+            username = st.session_state.get('current_user')
+            if username:
+                # Для администратора показываем все данные, для других пользователей — только их данные
+                if username == 'admin':
+                    st.header('Статистика предсказаний')
+                    all_predictions = execute_clickhouse_query('SELECT prediction FROM results')
+                    predictions_df = pd.DataFrame(all_predictions, columns=['Предсказание'])
+                    create_pie_chart(predictions_df)
+                else:
+                    st.header('Статистика предсказаний')
+                    query = 'SELECT prediction FROM results WHERE username = %(username)s'
+                    params = {'username': username}
+                    all_predictions = execute_clickhouse_query(query, params)
+                    predictions_df = pd.DataFrame(all_predictions, columns=['Предсказание'])
+                    create_pie_chart(predictions_df)
 
     else:
         with st.sidebar:
@@ -278,9 +301,10 @@ def main():
                 password = st.text_input("Пароль", type='password', key="password_login")
 
                 if username and password and st.button("Войти", key="login_button"):
-                    if login_user(username, password):
-                        st.success("Вы успешно вошли в систему!")
+                    user_data = login_user(username, password)
+                    if user_data:
                         st.session_state['authenticated'] = True
+                        st.session_state['current_user'] = username  # Здесь сохраняем имя вошедшего пользователя
                         st.experimental_rerun()
                     else:
                         st.error("Неверное имя пользователя или пароль")
