@@ -9,6 +9,9 @@ from app.config import getConfig
 from sklearn.experimental import enable_hist_gradient_boosting  # noqa
 from sklearn.ensemble import HistGradientBoostingClassifier
 import pickle
+import bcrypt
+import re
+
 
 config = getConfig()
 
@@ -21,17 +24,46 @@ def is_username_taken(username):
     return data[0][0] > 0
 
 
-def create_users_table():
-    execute_clickhouse_query('CREATE TABLE IF NOT EXISTS userstable(username String, password String) ENGINE = MergeTree() ORDER BY username')
+def is_password_strong(password):
+    # Проверка длины пароля
+    if len(password) < 8:
+        return False
+    # Проверка наличия минимум одной заглавной буквы
+    if not re.search("[A-Z]", password):
+        return False
+    # Проверка наличия минимум одного специального символа
+    if not re.search("[!@#$%^&*(),.?\":{}|<>\-'/]", password):
+        return False
+    return True
 
-def add_userdata(username, password):
+def generate_password_hash(password):
+    password_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(password_bytes, salt)
+    return hashed_password.decode('utf-8')
+
+def check_password_hash(password, hashed_password):
+    password_bytes = password.encode('utf-8')
+    hashed_password_bytes = hashed_password.encode('utf-8')
+    return bcrypt.checkpw(password_bytes, hashed_password_bytes)
+
+
+def create_users_table():
+    execute_clickhouse_query("CREATE TABLE IF NOT EXISTS userstable(username String, \
+    password String, role String DEFAULT 'user') ENGINE = MergeTree() ORDER BY username")
+
+def add_userdata(username, password, role='user'):
     if is_username_taken(username):
         return False  # Имя пользователя уже занято
-    execute_clickhouse_query('INSERT INTO userstable(username, password) VALUES', [(username, password)])
+    hashed_password = generate_password_hash(password)
+    execute_clickhouse_query('INSERT INTO userstable(username, password, role) VALUES', [(username, hashed_password, role)])
     return True
 def login_user(username, password):
-    data = execute_clickhouse_query('SELECT * FROM userstable WHERE username = %(username)s AND password = %(password)s', {'username': username, 'password': password})
-    return data
+    user_data = execute_clickhouse_query('SELECT username, password, role FROM userstable WHERE username = %(username)s', {'username': username})
+    if user_data and check_password_hash(password, user_data[0][1]):
+        return user_data[0][0], user_data[0][2]  # Возвращаем имя пользователя и его роль
+    else:
+        return False
 
 
 def logout_user():
@@ -86,7 +118,8 @@ def add_data(username, *args):
     execute_clickhouse_query(query, params)
 
 def view_data(username, start_date=None, end_date=None, selected_prediction=None):
-    if username == 'admin':
+    role = st.session_state.get('user_role')
+    if role == 'admin':
         query = 'SELECT * FROM results'
         params = {}
     else:
@@ -94,7 +127,7 @@ def view_data(username, start_date=None, end_date=None, selected_prediction=None
         params = {'username': username}
 
     # Для администратора добавляем расширенный фильтр
-    if username == 'admin':
+    if role == 'admin':
         if selected_prediction and selected_prediction != 'Все':
             query += ' WHERE prediction = %(prediction)s'
             params['prediction'] = selected_prediction
@@ -233,24 +266,13 @@ def main():
             prediction_options = ["смерть", "эвтаназия", "живой"]
 
             if username:
-                # Для администратора показываем все данные, для других пользователей — только их данные
-                if username == 'admin':
-                    selected_prediction = st.selectbox('Фильтр по полю predict:', ['Все'] + prediction_options)
-                    start_date = st.date_input("Выберите начальную дату:", date.today() - timedelta(days=7))
-                    end_date = st.date_input("Выберите конечную дату:", date.today())
-                    if st.button('Показать данные'):
-                        data_df = view_data(username, start_date, end_date,
-                                            selected_prediction)  # Используем функцию view_data
-                        st.dataframe(data_df)
-                else:  # Если пользователь не admin
-                    selected_prediction = st.selectbox('Фильтр по полю predict:', ['Все'] + prediction_options)
-                    start_date = st.date_input("Выберите начальную дату:", date.today() - timedelta(days=7))
-                    end_date = st.date_input("Выберите конечную дату:", date.today())
-
-                    if st.button('Показать мои данные'):
-                        # Предполагаем, что функция view_data может принимать даты для фильтрации
-                        data = view_data(username, start_date, end_date)
-                        st.dataframe(data)
+                selected_prediction = st.selectbox('Фильтр по полю predict:', ['Все'] + prediction_options)
+                start_date = st.date_input("Выберите начальную дату:", date.today() - timedelta(days=7))
+                end_date = st.date_input("Выберите конечную дату:", date.today())
+                if st.button('Показать данные'):
+                    data_df = view_data(username, start_date, end_date,
+                                        selected_prediction)  # Используем функцию view_data
+                    st.dataframe(data_df)
             else:
                 st.error("Вы не авторизованы!")
 
@@ -258,7 +280,7 @@ def main():
             username = st.session_state.get('current_user')
             if username:
                 # Для администратора показываем все данные, для других пользователей — только их данные
-                if username == 'admin':
+                if st.session_state.get('user_role') == 'admin':
                     st.header('Статистика предсказаний')
                     all_predictions = execute_clickhouse_query('SELECT prediction FROM results')
                     predictions_df = pd.DataFrame(all_predictions, columns=['Предсказание'])
@@ -288,13 +310,17 @@ def main():
                         # Останавливаем дальнейший ввод данных, пока не будет выбрано другое имя пользователя
                     else:
                         new_password = st.text_input("Пароль", type='password', key="new_password")
-                        confirm_password = st.text_input("Повторите пароль", type='password', key="confirm_password")
-                        if new_password and confirm_password and st.button("Зарегистрироваться", key="signup_button"):
-                            if new_password == confirm_password:
-                                add_userdata(new_username, new_password)
-                                st.success("Вы успешно зарегистрировались!")
-                            else:
-                                st.error("Пароли не совпадают. Попробуйте снова.")
+                        if is_password_strong(new_password):
+                            confirm_password = st.text_input("Повторите пароль", type='password', key="confirm_password")
+                            if new_password and confirm_password and st.button("Зарегистрироваться", key="signup_button"):
+                                if new_password == confirm_password:
+                                    add_userdata(new_username, new_password)
+                                    st.success("Вы успешно зарегистрировались!")
+                                else:
+                                    st.error("Пароли не совпадают. Попробуйте снова.")
+                        else:
+                            st.error("Пароль должен быть длинее 8 символов, содержать минимум одну заглавную букву и один специальный символ.")
+
 
             elif choice == "Вход":
                 username = st.text_input("Имя пользователя", key="username_login")
@@ -303,8 +329,10 @@ def main():
                 if username and password and st.button("Войти", key="login_button"):
                     user_data = login_user(username, password)
                     if user_data:
+                        username, role = user_data
                         st.session_state['authenticated'] = True
                         st.session_state['current_user'] = username  # Здесь сохраняем имя вошедшего пользователя
+                        st.session_state['user_role'] = role
                         st.experimental_rerun()
                     else:
                         st.error("Неверное имя пользователя или пароль")
