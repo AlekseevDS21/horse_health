@@ -6,7 +6,6 @@ from datetime import datetime, date, timedelta
 import plotly.express as px
 import os.path
 from app.config import getConfig
-from sklearn.experimental import enable_hist_gradient_boosting  # noqa
 from sklearn.ensemble import HistGradientBoostingClassifier
 import pickle
 import bcrypt
@@ -32,7 +31,7 @@ def is_password_strong(password):
     if not re.search("[A-Z]", password):
         return False
     # Проверка наличия минимум одного специального символа
-    if not re.search("[!@#$%^&*(),.?\":{}|<>\-'/]", password):
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>\-'/]", password):
         return False
     return True
 
