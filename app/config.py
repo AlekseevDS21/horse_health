@@ -1,9 +1,9 @@
-import os
-
 def getConfig():
-    password = os.environ.get('password')
 
     config = {
-        'password': password
+        'host': 'localhost',
+        'database': 'health',
+        'user': 'default',
+        'password': 'Andrey41k!',
     }
     return config

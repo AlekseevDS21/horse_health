@@ -14,7 +14,7 @@ import re
 
 config = getConfig()
 
-client = Client(host='localhost', database='health', user='default', password='Andrey41k!')
+client = Client(host=config['host'], database=config['database'], user=config['user'], password=config['password'])
 def execute_clickhouse_query(query, params=None):
     return client.execute(query, params, types_check=True) if params else client.execute(query, types_check=True)
 
@@ -174,42 +174,42 @@ def main():
             if st.button('Выйти из аккаунта'):
                 logout_user()
 
-        tab1, tab2, tab3 = st.tabs(['Ввод данных', 'Просмотр БД', 'Дашборд'])
+        tab1, tab2, tab3 = st.tabs(['Ввод данных', 'Просмотр истории', 'Дашборд'])
 
         with tab1:
             st.header('Введите данные для анализа')
 
             # Описание параметров для ввода
             parameters_description = {
-                1: "ID лошади",
+                1: "Номер больницы",
                 2: "Предыдущее посещение (номер, 0 если нет)",
                 3: "Объем упакованных клеток (PCV):",
                 4: "Общий белок(г/л):",
                 5: "Частота пульса (уд/мин)",
                 6: "Ректальная температура (°C)",
-                7: "Белок брюшной полости(г/л)",
-                8: "pH назогастрального рефлюкса",
-                9: "Ввести номер соответствующего значения \n ('alert': 0, 'depressed': 1, 'moderate': 2, 'mild_pain': 3, 'severe_pain': 4, 'extreme_pain': 5)",
-                10: "Назогастральный рефлюкс ('less_1_liter': 0, 'none': 1, 'more_1_liter': 2)",
-                11: "Ректальный осмотр фекалий ('absent': 0, 'decreased': 1, 'normal': 2, 'increased': 3)",
-                12: "Частота пульса (удары в минуту):",
-                13: "Частота пульса (удары в минуту):",
-                14: "Частота пульса (удары в минуту):",
-                15: "Частота пульса (удары в минуту):",
-                16: "Частота пульса (удары в минуту):",
-                17: "Частота пульса (удары в минуту):",
-                18: "Частота пульса (удары в минуту):",
-                19: "Частота пульса (удары в минуту):",
-                20: "Частота пульса (удары в минуту):",
-                21: "Частота пульса (удары в минуту):",
-                22: "Частота пульса (удары в минуту):",
-                23: "Частота пульса (удары в минуту):",
-                24: "Частота пульса (удары в минуту):",
-                25: "Частота пульса (удары в минуту):",
-                26: "Частота пульса (удары в минуту):",
-                27: "Частота пульса (удары в минуту):",
-                28: "Общий уровень белка (г/дл):",
-                29: "Рефлекс перистальтики (баллы):"
+                7: "Частота дыхания (в мин.)",
+                8: "Белок брюшной полости(г/л)",
+                9: "pH назогастрального рефлюкса",
+                10: "Боль ('alert': 0, 'depressed': 1, 'moderate': 2, 'mild_pain': 3, 'severe_pain': 4, 'extreme_pain': 5)",
+                11: "Назогастральный рефлюкс ('less_1_liter': 0, 'none': 1, 'more_1_liter': 2)",
+                12: "Ректальный анализ фекалий ('absent': 0, 'decreased': 1, 'normal': 2, 'increased': 3)",
+                13: "Вздутие живота ('absent': 0, 'decreased': 1, 'normal': 2, 'increased': 3)",
+                14: "Внешний вид брюшной полости ('none': 0, 'slight': 1, 'moderate': 2, 'severe': 3)",
+                15: "Живот ('clear': 0, 'cloudy': 1, 'serosanguious': 2)",
+                16: "Носоглоточная трубка ('none': 0, 'slight': 1, 'significant': 2)",
+                17: "Температура конечностей ('cold': 0, 'cool': 1, 'normal': 2, 'warm': 3)",
+                18: "Перистальтика (hypermotile': 0, 'normal': 1, 'hypomotile': 2, 'absent': 3)",
+                19: "Данные клинического исследования (0 - нет, 1 - да)",
+                20: "Время восполнения капилляров ('меньше 3 сек.': 0, '3 секунды': 1, 'меньше 3 сек.': 2)",
+                21: "Хирургия (0 - не было, 1 - была)",
+                22: "Периферический пульс ('absent': 0, 'reduced': 1, 'normal': 2, 'increased': 3)",
+                23: "Ярко красные слизистые (0 - нет, 1 - да)",
+                24: "Хирургическое поражение (0 - нет, 1 - да)",
+                25: "Бледно розовые слизистые (0 - нет, 1 - да)",
+                26: "Нормально розовые слизистые (0 - нет, 1 - да)",
+                27: "Бледно голубые слизистые (0 - нет, 1 - да)",
+                28: "Возраст более 10 лет (0 - нет, 1 - да)",
+                29: "Ярко розовые слизистые (0 - нет, 1 - да)"
             }
 
             user_input_list = []
@@ -266,8 +266,9 @@ def main():
 
             if username:
                 selected_prediction = st.selectbox('Фильтр по полю predict:', ['Все'] + prediction_options)
-                start_date = st.date_input("Выберите начальную дату:", date.today() - timedelta(days=7))
-                end_date = st.date_input("Выберите конечную дату:", date.today())
+                start_date = st.date_input("Выберите начальную дату:", date.today() - timedelta(days=7),
+                                           key='start_date_tab2')
+                end_date = st.date_input("Выберите конечную дату:", date.today(), key='end_date_tab2')
                 if st.button('Показать данные'):
                     data_df = view_data(username, start_date, end_date,
                                         selected_prediction)  # Используем функцию view_data
@@ -281,13 +282,24 @@ def main():
                 # Для администратора показываем все данные, для других пользователей — только их данные
                 if st.session_state.get('user_role') == 'admin':
                     st.header('Статистика предсказаний')
-                    all_predictions = execute_clickhouse_query('SELECT prediction FROM results')
+                    start_date_adm = st.date_input("Выберите начальную дату:", date.today() - timedelta(days=7),
+                                                   key='start_date_adm')
+                    end_date_adm = st.date_input("Выберите конечную дату:", date.today(), key='end_date_adm')
+                    formatted_start_date = start_date_adm.strftime('%Y-%m-%d')
+                    formatted_end_date = end_date_adm.strftime('%Y-%m-%d')
+                    all_predictions = execute_clickhouse_query(f"SELECT prediction FROM results WHERE toDate(datestamp) BETWEEN '{formatted_start_date}' AND '{formatted_end_date}'")
                     predictions_df = pd.DataFrame(all_predictions, columns=['Предсказание'])
                     create_pie_chart(predictions_df)
                 else:
                     st.header('Статистика предсказаний')
+                    start_date_user = st.date_input("Выберите начальную дату:", date.today() - timedelta(days=7),
+                                                    key='start_date_user')
+                    end_date_user = st.date_input("Выберите конечную дату:", date.today(), key='end_date_user')
                     query = 'SELECT prediction FROM results WHERE username = %(username)s'
                     params = {'username': username}
+                    formatted_start_date = start_date_user.strftime('%Y-%m-%d')
+                    formatted_end_date = end_date_user.strftime('%Y-%m-%d')
+                    query += f" AND toDate(datestamp) BETWEEN '{formatted_start_date}' AND '{formatted_end_date}'"
                     all_predictions = execute_clickhouse_query(query, params)
                     predictions_df = pd.DataFrame(all_predictions, columns=['Предсказание'])
                     create_pie_chart(predictions_df)
@@ -314,7 +326,7 @@ def main():
                             if new_password and confirm_password and st.button("Зарегистрироваться", key="signup_button"):
                                 if new_password == confirm_password:
                                     add_userdata(new_username, new_password)
-                                    st.success("Вы успешно зарегистрировались!")
+                                    st.success("Вы успешно зарегистрировались! Можно перейти к входу")
                                 else:
                                     st.error("Пароли не совпадают. Попробуйте снова.")
                         else:
