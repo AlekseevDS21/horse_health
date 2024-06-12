@@ -12,6 +12,7 @@ import bcrypt
 import re
 
 
+
 config = getConfig()
 
 client = Client(host=config['host'], database=config['database'], user=config['user'], password=config['password'])
@@ -19,7 +20,8 @@ def execute_clickhouse_query(query, params=None):
     return client.execute(query, params, types_check=True) if params else client.execute(query, types_check=True)
 
 def is_username_taken(username):
-    data = execute_clickhouse_query("SELECT COUNT(*) FROM userstable WHERE username = %(username)s", {'username': username})
+    data = execute_clickhouse_query("SELECT COUNT(*) FROM userstable WHERE username = %(username)s",
+                                    {'username': username})
     return data[0][0] > 0
 
 
@@ -55,10 +57,12 @@ def add_userdata(username, password, role='user'):
     if is_username_taken(username):
         return False  # Имя пользователя уже занято
     hashed_password = generate_password_hash(password)
-    execute_clickhouse_query('INSERT INTO userstable(username, password, role) VALUES', [(username, hashed_password, role)])
+    execute_clickhouse_query('INSERT INTO userstable(username, password, role) VALUES',
+                             [(username, hashed_password, role)])
     return True
 def login_user(username, password):
-    user_data = execute_clickhouse_query('SELECT username, password, role FROM userstable WHERE username = %(username)s', {'username': username})
+    user_data = execute_clickhouse_query('SELECT username, password, role FROM userstable WHERE username = %(username)s',
+                                         {'username': username})
     if user_data and check_password_hash(password, user_data[0][1]):
         return user_data[0][0], user_data[0][2]  # Возвращаем имя пользователя и его роль
     else:
@@ -112,7 +116,12 @@ def create_table():
 
 def add_data(username, *args):
     datestamp = datetime.now()
-    query = 'INSERT INTO results (username, hospital_number, lesion_1, packed_cell_volume, total_protein, pulse, rectal_temp, respiratory_rate, abdomo_protein, nasogastric_reflux_ph, pain, nasogastric_reflux, rectal_exam_feces, abdominal_distention, abdomo_appearance, abdomen, nasogastric_tube, temp_of_extremities, peristalsis, cp_data, capillary_refill_time, surgery, peripheral_pulse, mucous_membrane_bright_red, surgical_lesion, mucous_membrane_pale_pink, mucous_membrane_normal_pink, mucous_membrane_pale_cyanotic, age, is_generated, mucous_membrane_bright_pink, prediction, datestamp) VALUES'
+    query = ('INSERT INTO results (username, hospital_number, lesion_1, packed_cell_volume, total_protein, '
+             'pulse, rectal_temp, respiratory_rate, abdomo_protein, nasogastric_reflux_ph, pain, nasogastric_reflux, '
+             'rectal_exam_feces, abdominal_distention, abdomo_appearance, abdomen, nasogastric_tube, temp_of_extremities, '
+             'peristalsis, cp_data, capillary_refill_time, surgery, peripheral_pulse, mucous_membrane_bright_red, '
+             'surgical_lesion, mucous_membrane_pale_pink, mucous_membrane_normal_pink, mucous_membrane_pale_cyanotic, '
+             'age, is_generated, mucous_membrane_bright_pink, prediction, datestamp) VALUES')
     params = [(username,) + tuple(args) + (datestamp,)]
     execute_clickhouse_query(query, params)
 
@@ -159,6 +168,14 @@ def create_pie_chart(data, column='Предсказание'):
 
 
 def main():
+    st.markdown("""
+        <style>
+        .big-font {
+            font-size:35px !important;
+        }
+        </style>
+        <div class="big-font">Добро пожаловать!<br> Для выполнения входа с телефона нажмите кнопку в верхнем левом углу.</div>    
+        """, unsafe_allow_html=True)
     create_users_table()
     if 'authenticated' not in st.session_state:
         st.session_state['authenticated'] = False
@@ -230,13 +247,15 @@ def main():
 
             # Кнопка для обработки ввода
             if submit_button:
+                count=1
                 try:
                     for i in range(1, 30):
                         if 3 <= i <= 9:
                             user_input_list.append(float(st.session_state[f'param{i}']))
+                            count+=1
                         else:
                             user_input_list.append(int(st.session_state[f'param{i}']))
-                    print(user_input_list)
+                            count+=1
                     old_value = user_input_list[28]
                     # Заменяем 29-е значение на 'единица'
                     user_input_list[28] = 1
@@ -256,7 +275,7 @@ def main():
                     create_table()
                     add_data(username, *user_input_list, prediction)
                 except:
-                    st.write('Введены не корректные данные')
+                    st.write(f"Введены не корректные данные в поле - {parameters_description[count]}")
 
 
         with tab2:
